@@ -9,10 +9,14 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.extensions.ExtensionMode
+import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.video.Quality
@@ -27,6 +31,13 @@ import androidx.lifecycle.LifecycleOwner
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+enum class CameraAspectRatio {
+    SQUARE,
+    RATIO_4_3,
+    RATIO_16_9
+}
 
 /**
  * CameraX controller that keeps camera logic away from Compose UI.
@@ -58,7 +69,10 @@ class CameraController(
     fun bindCameraUseCases(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
-        lensFacing: Int = CameraSelector.LENS_FACING_BACK
+        lensFacing: Int = CameraSelector.LENS_FACING_BACK,
+        aspectRatio: CameraAspectRatio = CameraAspectRatio.RATIO_4_3,
+        enableHdr: Boolean = false,
+        onHdrSupportResolved: ((Boolean) -> Unit)? = null
     ) {
         val providerFuture = ProcessCameraProvider.getInstance(appContext)
 
@@ -67,7 +81,15 @@ class CameraController(
                 val provider = providerFuture.get()
                 cameraProvider = provider
 
-                val preview = Preview.Builder().build().also {
+                val ratio = when (aspectRatio) {
+                    CameraAspectRatio.RATIO_16_9 -> AspectRatio.RATIO_16_9
+                    CameraAspectRatio.SQUARE,
+                    CameraAspectRatio.RATIO_4_3 -> AspectRatio.RATIO_4_3
+                }
+
+                val preview = Preview.Builder()
+                    .setTargetAspectRatio(ratio)
+                    .build().also {
                     // Critical: use the composable PreviewView surface provider.
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
@@ -80,6 +102,7 @@ class CameraController(
 
                 val boundImageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setTargetAspectRatio(ratio)
                     .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
                     .build()
 
@@ -87,25 +110,80 @@ class CameraController(
                     .requireLensFacing(lensFacing)
                     .build()
 
-                // Critical: unbind first to avoid stale use-cases and black preview.
-                provider.unbindAll()
-                boundCamera = provider.bindToLifecycle(
-                    lifecycleOwner,
-                    selector,
-                    preview,
-                    boundImageCapture,
-                    boundVideoCapture
-                )
+                if (!enableHdr) {
+                    onHdrSupportResolved?.invoke(false)
+                    bindResolvedUseCases(
+                        provider = provider,
+                        lifecycleOwner = lifecycleOwner,
+                        selector = selector,
+                        preview = preview,
+                        boundImageCapture = boundImageCapture,
+                        boundVideoCapture = boundVideoCapture
+                    )
+                    return@addListener
+                }
 
-                imageCapture = boundImageCapture
-                videoCapture = boundVideoCapture
-                Log.d(tag, "Camera started")
-                Log.d(tag, "Camera use-cases bound successfully")
+                val extensionFuture = ExtensionsManager.getInstanceAsync(appContext, provider)
+                extensionFuture.addListener({
+                    try {
+                        val extensionManager = extensionFuture.get()
+                        val isHdrSupported = extensionManager.isExtensionAvailable(selector, ExtensionMode.HDR)
+                        onHdrSupportResolved?.invoke(isHdrSupported)
+                        val resolvedSelector = if (isHdrSupported) {
+                            extensionManager.getExtensionEnabledCameraSelector(selector, ExtensionMode.HDR)
+                        } else {
+                            selector
+                        }
+
+                        bindResolvedUseCases(
+                            provider = provider,
+                            lifecycleOwner = lifecycleOwner,
+                            selector = resolvedSelector,
+                            preview = preview,
+                            boundImageCapture = boundImageCapture,
+                            boundVideoCapture = boundVideoCapture
+                        )
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to resolve HDR extension", e)
+                        onHdrSupportResolved?.invoke(false)
+                        bindResolvedUseCases(
+                            provider = provider,
+                            lifecycleOwner = lifecycleOwner,
+                            selector = selector,
+                            preview = preview,
+                            boundImageCapture = boundImageCapture,
+                            boundVideoCapture = boundVideoCapture
+                        )
+                    }
+                }, executor)
             } catch (e: Exception) {
                 Log.e(tag, "Failed to bind camera use-cases", e)
                 onError?.invoke("Failed to start camera: ${e.message}")
             }
         }, executor)
+    }
+
+    private fun bindResolvedUseCases(
+        provider: ProcessCameraProvider,
+        lifecycleOwner: LifecycleOwner,
+        selector: CameraSelector,
+        preview: Preview,
+        boundImageCapture: ImageCapture,
+        boundVideoCapture: VideoCapture<Recorder>
+    ) {
+        provider.unbindAll()
+        boundCamera = provider.bindToLifecycle(
+            lifecycleOwner,
+            selector,
+            preview,
+            boundImageCapture,
+            boundVideoCapture
+        )
+
+        imageCapture = boundImageCapture
+        videoCapture = boundVideoCapture
+        Log.d(tag, "Camera started")
+        Log.d(tag, "Camera use-cases bound successfully")
     }
 
     /**
@@ -277,6 +355,23 @@ class CameraController(
         val range = getExposureCompensationRange()
         val clamped = index.coerceIn(range.first, range.last)
         boundCamera?.cameraControl?.setExposureCompensationIndex(clamped)
+    }
+
+    fun tapToFocus(
+        previewView: PreviewView,
+        tapX: Float,
+        tapY: Float
+    ) {
+        val pointFactory = previewView.meteringPointFactory
+        val point = pointFactory.createPoint(tapX, tapY)
+        val action = FocusMeteringAction.Builder(
+            point,
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+        )
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+
+        boundCamera?.cameraControl?.startFocusAndMetering(action)
     }
 
     /**

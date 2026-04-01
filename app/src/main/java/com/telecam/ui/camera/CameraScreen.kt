@@ -8,7 +8,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,8 +35,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.HdrAuto
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
@@ -48,9 +53,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -65,6 +75,7 @@ fun CameraScreen(
     onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
 
@@ -88,9 +99,14 @@ fun CameraScreen(
     var zoomLevel by rememberSaveable { mutableStateOf(0f) }
     var exposureCompensation by rememberSaveable { mutableStateOf(0f) }
     var photoTimerSeconds by rememberSaveable { mutableStateOf(0) }
+    var gridEnabled by rememberSaveable { mutableStateOf(false) }
+    var hdrEnabled by rememberSaveable { mutableStateOf(false) }
+    var hdrSupported by remember { mutableStateOf(false) }
+    var selectedAspectRatio by rememberSaveable { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var showProControls by rememberSaveable { mutableStateOf(false) }
     var photoCountdown by rememberSaveable { mutableStateOf(0) }
     var recordingSeconds by rememberSaveable { mutableStateOf(0) }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
     val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -120,12 +136,20 @@ fun CameraScreen(
     }
 
     // Bind all use cases when permissions are ready and lifecycle is available.
-    LaunchedEffect(hasAllPermissions, lifecycleOwner, previewView, lensFacing) {
+    LaunchedEffect(hasAllPermissions, lifecycleOwner, previewView, lensFacing, selectedAspectRatio, hdrEnabled) {
         if (hasAllPermissions) {
             cameraController.bindCameraUseCases(
                 lifecycleOwner = lifecycleOwner,
                 previewView = previewView,
-                lensFacing = lensFacing
+                lensFacing = lensFacing,
+                aspectRatio = selectedAspectRatio,
+                enableHdr = hdrEnabled,
+                onHdrSupportResolved = { supported ->
+                    hdrSupported = supported
+                    if (hdrEnabled && !supported) {
+                        statusMessage = "HDR not supported on this camera"
+                    }
+                }
             )
         }
     }
@@ -181,6 +205,74 @@ fun CameraScreen(
                 update = {
                     it.scaleType = PreviewView.ScaleType.FILL_CENTER
                 }
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(isRecording) {
+                        detectTapGestures { tapOffset ->
+                            if (!isRecording) {
+                                cameraController.tapToFocus(previewView, tapOffset.x, tapOffset.y)
+                                focusPoint = tapOffset
+                                scope.launch {
+                                    delay(800)
+                                    focusPoint = null
+                                }
+                            }
+                        }
+                    }
+            ) {
+                if (gridEnabled) {
+                    RuleOfThirdsGrid(modifier = Modifier.fillMaxSize())
+                }
+
+                focusPoint?.let { point ->
+                    FocusRing(
+                        point = point,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            TopControlsBar(
+                torchEnabled = torchEnabled,
+                timerSeconds = photoTimerSeconds,
+                gridEnabled = gridEnabled,
+                hdrEnabled = hdrEnabled,
+                hdrSupported = hdrSupported,
+                selectedAspectRatio = selectedAspectRatio,
+                onToggleTorch = {
+                    torchEnabled = !torchEnabled
+                    cameraController.setTorch(torchEnabled)
+                },
+                onToggleGrid = {
+                    gridEnabled = !gridEnabled
+                },
+                onToggleHdr = {
+                    hdrEnabled = !hdrEnabled
+                    if (hdrEnabled && !hdrSupported) {
+                        statusMessage = "Trying HDR mode..."
+                    }
+                },
+                onCycleTimer = {
+                    photoTimerSeconds = when (photoTimerSeconds) {
+                        0 -> 3
+                        3 -> 10
+                        else -> 0
+                    }
+                },
+                onCycleAspectRatio = {
+                    selectedAspectRatio = selectedAspectRatio.next()
+                    statusMessage = when (selectedAspectRatio) {
+                        CameraAspectRatio.SQUARE -> "Aspect 1:1"
+                        CameraAspectRatio.RATIO_4_3 -> "Aspect 4:3"
+                        CameraAspectRatio.RATIO_16_9 -> "Aspect 16:9"
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
             )
 
             if (isRecording) {
@@ -261,6 +353,7 @@ fun CameraScreen(
                             }
                         }
                         photoCountdown = 0
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         cameraController.takePhoto(context)
                     }
                 },
@@ -330,6 +423,114 @@ fun CameraScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
+    }
+}
+
+private fun CameraAspectRatio.next(): CameraAspectRatio {
+    return when (this) {
+        CameraAspectRatio.SQUARE -> CameraAspectRatio.RATIO_4_3
+        CameraAspectRatio.RATIO_4_3 -> CameraAspectRatio.RATIO_16_9
+        CameraAspectRatio.RATIO_16_9 -> CameraAspectRatio.SQUARE
+    }
+}
+
+@Composable
+private fun TopControlsBar(
+    torchEnabled: Boolean,
+    timerSeconds: Int,
+    gridEnabled: Boolean,
+    hdrEnabled: Boolean,
+    hdrSupported: Boolean,
+    selectedAspectRatio: CameraAspectRatio,
+    onToggleTorch: () -> Unit,
+    onCycleTimer: () -> Unit,
+    onToggleGrid: () -> Unit,
+    onCycleAspectRatio: () -> Unit,
+    onToggleHdr: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.35f), MaterialTheme.shapes.large)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onToggleTorch) {
+            Icon(
+                imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                contentDescription = "Toggle flash",
+                tint = Color.White
+            )
+        }
+        IconButton(onClick = onCycleTimer) {
+            Icon(
+                imageVector = Icons.Default.Timer,
+                contentDescription = "Cycle timer",
+                tint = Color.White
+            )
+        }
+        Text(text = if (timerSeconds == 0) "Off" else "${timerSeconds}s", color = Color.White)
+        IconButton(onClick = onToggleGrid) {
+            Icon(
+                imageVector = Icons.Default.GridOn,
+                contentDescription = "Toggle grid",
+                tint = if (gridEnabled) Color(0xFF8AB4F8) else Color.White
+            )
+        }
+        IconButton(onClick = onCycleAspectRatio) {
+            Icon(
+                imageVector = Icons.Default.CropSquare,
+                contentDescription = "Switch aspect ratio",
+                tint = Color.White
+            )
+        }
+        Text(
+            text = when (selectedAspectRatio) {
+                CameraAspectRatio.SQUARE -> "1:1"
+                CameraAspectRatio.RATIO_4_3 -> "4:3"
+                CameraAspectRatio.RATIO_16_9 -> "16:9"
+            },
+            color = Color.White
+        )
+        IconButton(onClick = onToggleHdr) {
+            Icon(
+                imageVector = Icons.Default.HdrAuto,
+                contentDescription = "Toggle HDR",
+                tint = if (hdrEnabled && hdrSupported) Color(0xFF8AB4F8) else Color.White
+            )
+        }
+    }
+}
+
+@Composable
+private fun RuleOfThirdsGrid(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val lineColor = Color.White.copy(alpha = 0.38f)
+        val firstThirdX = size.width / 3f
+        val secondThirdX = firstThirdX * 2f
+        val firstThirdY = size.height / 3f
+        val secondThirdY = firstThirdY * 2f
+
+        drawLine(lineColor, Offset(firstThirdX, 0f), Offset(firstThirdX, size.height), strokeWidth = 1f)
+        drawLine(lineColor, Offset(secondThirdX, 0f), Offset(secondThirdX, size.height), strokeWidth = 1f)
+        drawLine(lineColor, Offset(0f, firstThirdY), Offset(size.width, firstThirdY), strokeWidth = 1f)
+        drawLine(lineColor, Offset(0f, secondThirdY), Offset(size.width, secondThirdY), strokeWidth = 1f)
+    }
+}
+
+@Composable
+private fun FocusRing(
+    point: Offset,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        drawCircle(
+            color = Color.White,
+            radius = 48f,
+            center = point,
+            style = Stroke(width = 4f)
+        )
     }
 }
 

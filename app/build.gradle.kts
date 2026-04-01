@@ -92,6 +92,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
