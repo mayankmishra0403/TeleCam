@@ -39,6 +39,7 @@ class CameraController(
     private val executor = ContextCompat.getMainExecutor(appContext)
 
     private var cameraProvider: ProcessCameraProvider? = null
+    private var boundCamera: androidx.camera.core.Camera? = null
     private var imageCapture: ImageCapture? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
@@ -88,7 +89,7 @@ class CameraController(
 
                 // Critical: unbind first to avoid stale use-cases and black preview.
                 provider.unbindAll()
-                provider.bindToLifecycle(
+                boundCamera = provider.bindToLifecycle(
                     lifecycleOwner,
                     selector,
                     preview,
@@ -247,12 +248,45 @@ class CameraController(
     }
 
     /**
+     * Toggle torch mode.
+     */
+    fun setTorch(enabled: Boolean) {
+        boundCamera?.cameraControl?.enableTorch(enabled)
+    }
+
+    /**
+     * Set linear zoom [0f..1f].
+     */
+    fun setLinearZoom(value: Float) {
+        val zoom = value.coerceIn(0f, 1f)
+        boundCamera?.cameraControl?.setLinearZoom(zoom)
+    }
+
+    /**
+     * Exposure compensation range supported by current camera.
+     */
+    fun getExposureCompensationRange(): IntRange {
+        val range = boundCamera?.cameraInfo?.exposureState?.exposureCompensationRange
+        return if (range != null) range.lower..range.upper else -2..2
+    }
+
+    /**
+     * Set exposure compensation index.
+     */
+    fun setExposureCompensation(index: Int) {
+        val range = getExposureCompensationRange()
+        val clamped = index.coerceIn(range.first, range.last)
+        boundCamera?.cameraControl?.setExposureCompensationIndex(clamped)
+    }
+
+    /**
      * Release camera resources when screen leaves composition.
      */
     fun release() {
         recording?.stop()
         recording = null
         isRecordingState.value = false
+        boundCamera = null
         cameraProvider?.unbindAll()
         Log.d(tag, "Camera resources released")
     }

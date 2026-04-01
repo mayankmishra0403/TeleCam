@@ -59,6 +59,30 @@ class SettingsUseCase @Inject constructor(
         return settings.botToken.isNotBlank() && settings.chatId.isNotBlank()
     }
 
+    suspend fun setPendingAuthToken(token: String) {
+        settingsRepository.setPendingAuthToken(token)
+    }
+
+    suspend fun clearPendingAuthToken() {
+        settingsRepository.clearPendingAuthToken()
+    }
+
+    suspend fun completeTelegramOnboarding(
+        telegramUserId: String,
+        telegramUsername: String?,
+        botToken: String,
+        chatId: String
+    ) {
+        settingsRepository.setTelegramUserDetails(telegramUserId, telegramUsername)
+        setTelegramCredentials(botToken, chatId)
+        settingsRepository.clearPendingAuthToken()
+        settingsRepository.setOnboardingCompleted(true)
+    }
+
+    suspend fun isOnboardingCompleted(): Boolean {
+        return settingsRepository.getSettingsOnce().onboardingCompleted
+    }
+
     private fun normalizeBotToken(raw: String): String {
         val trimmed = raw.trim()
         val matched = tokenPattern.find(trimmed)?.value

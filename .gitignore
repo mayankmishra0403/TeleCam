@@ -17,3 +17,7 @@ tmp/
 
 # OS files
 Thumbs.db
+
+# Node / backend
+**/node_modules/
+**/.env

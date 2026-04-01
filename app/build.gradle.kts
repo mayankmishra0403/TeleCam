@@ -16,6 +16,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        buildConfigField("String", "TELEGRAM_AUTH_BASE_URL", "\"http://192.168.1.45:8080/\"")
+        buildConfigField("String", "TELEGRAM_BOT_USERNAME", "\"tele_ca_m_bot\"")
+        buildConfigField("String", "TELEGRAM_BOT_TOKEN", "\"8519978215:AAGUNc96X8Iey22EVdcbYGGTQ9sebv8btSo\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -40,6 +44,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.5"

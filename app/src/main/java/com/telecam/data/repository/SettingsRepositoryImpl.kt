@@ -33,6 +33,10 @@ class SettingsRepositoryImpl @Inject constructor(
         val WIFI_ONLY_UPLOAD = booleanPreferencesKey("wifi_only_upload")
         val BOT_TOKEN = stringPreferencesKey("bot_token")
         val CHAT_ID = stringPreferencesKey("chat_id")
+        val TELEGRAM_USER_ID = stringPreferencesKey("telegram_user_id")
+        val TELEGRAM_USERNAME = stringPreferencesKey("telegram_username")
+        val PENDING_AUTH_TOKEN = stringPreferencesKey("pending_auth_token")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val MAX_RETRIES = intPreferencesKey("max_retries")
         val CAMERA_FACING = stringPreferencesKey("camera_facing")
     }
@@ -44,6 +48,10 @@ class SettingsRepositoryImpl @Inject constructor(
                 wifiOnlyUpload = preferences[PreferenceKeys.WIFI_ONLY_UPLOAD] ?: false,
                 botToken = preferences[PreferenceKeys.BOT_TOKEN] ?: "",
                 chatId = preferences[PreferenceKeys.CHAT_ID] ?: "",
+                telegramUserId = preferences[PreferenceKeys.TELEGRAM_USER_ID] ?: "",
+                telegramUsername = preferences[PreferenceKeys.TELEGRAM_USERNAME] ?: "",
+                pendingAuthToken = preferences[PreferenceKeys.PENDING_AUTH_TOKEN] ?: "",
+                onboardingCompleted = preferences[PreferenceKeys.ONBOARDING_COMPLETED] ?: false,
                 maxRetries = preferences[PreferenceKeys.MAX_RETRIES] ?: 3,
                 cameraFacing = CameraFacing.valueOf(
                     preferences[PreferenceKeys.CAMERA_FACING] ?: CameraFacing.BACK.name
@@ -89,6 +97,31 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun setCameraFacing(facing: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferenceKeys.CAMERA_FACING] = facing
+        }
+    }
+
+    override suspend fun setPendingAuthToken(token: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.PENDING_AUTH_TOKEN] = token
+        }
+    }
+
+    override suspend fun clearPendingAuthToken() {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.PENDING_AUTH_TOKEN] = ""
+        }
+    }
+
+    override suspend fun setTelegramUserDetails(userId: String, username: String?) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.TELEGRAM_USER_ID] = userId
+            preferences[PreferenceKeys.TELEGRAM_USERNAME] = username ?: ""
+        }
+    }
+
+    override suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.ONBOARDING_COMPLETED] = completed
         }
     }
 }

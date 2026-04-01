@@ -19,14 +19,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun CameraScreen(
@@ -67,6 +83,15 @@ fun CameraScreen(
     var hasAllPermissions by remember {
         mutableStateOf(context.hasCameraAndAudioPermissions())
     }
+    var lensFacing by rememberSaveable { mutableStateOf(androidx.camera.core.CameraSelector.LENS_FACING_BACK) }
+    var torchEnabled by rememberSaveable { mutableStateOf(false) }
+    var zoomLevel by rememberSaveable { mutableStateOf(0f) }
+    var exposureCompensation by rememberSaveable { mutableStateOf(0f) }
+    var photoTimerSeconds by rememberSaveable { mutableStateOf(0) }
+    var showProControls by rememberSaveable { mutableStateOf(false) }
+    var photoCountdown by rememberSaveable { mutableStateOf(0) }
+    var recordingSeconds by rememberSaveable { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -95,9 +120,13 @@ fun CameraScreen(
     }
 
     // Bind all use cases when permissions are ready and lifecycle is available.
-    LaunchedEffect(hasAllPermissions, lifecycleOwner, previewView) {
+    LaunchedEffect(hasAllPermissions, lifecycleOwner, previewView, lensFacing) {
         if (hasAllPermissions) {
-            cameraController.bindCameraUseCases(lifecycleOwner, previewView)
+            cameraController.bindCameraUseCases(
+                lifecycleOwner = lifecycleOwner,
+                previewView = previewView,
+                lensFacing = lensFacing
+            )
         }
     }
 
@@ -130,6 +159,19 @@ fun CameraScreen(
     }
 
     val isRecording = cameraController.isRecording
+    val exposureRange = cameraController.getExposureCompensationRange()
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            recordingSeconds = 0
+            while (isRecording) {
+                delay(1000)
+                recordingSeconds += 1
+            }
+        } else {
+            recordingSeconds = 0
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (hasAllPermissions) {
@@ -143,7 +185,7 @@ fun CameraScreen(
 
             if (isRecording) {
                 Text(
-                    text = "Recording...",
+                    text = "Recording... ${recordingSeconds.toTimerText()}",
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier
@@ -154,16 +196,97 @@ fun CameraScreen(
                 )
             }
 
+            if (photoCountdown > 0) {
+                Text(
+                    text = "${photoCountdown}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.displayLarge,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                        .padding(horizontal = 28.dp, vertical = 12.dp)
+                )
+            }
+
+            if (showProControls) {
+                ProControlsPanel(
+                    torchEnabled = torchEnabled,
+                    zoomLevel = zoomLevel,
+                    exposureValue = exposureCompensation,
+                    exposureRange = exposureRange,
+                    timerValue = photoTimerSeconds,
+                    onToggleTorch = {
+                        torchEnabled = !torchEnabled
+                        cameraController.setTorch(torchEnabled)
+                    },
+                    onZoomChanged = {
+                        zoomLevel = it
+                        cameraController.setLinearZoom(it)
+                    },
+                    onExposureChanged = { value ->
+                        exposureCompensation = value
+                        cameraController.setExposureCompensation(value.toInt())
+                    },
+                    onTimerSelected = { seconds ->
+                        photoTimerSeconds = seconds
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 12.dp, end = 12.dp, bottom = 156.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { showProControls = !showProControls },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 20.dp, bottom = 24.dp)
+                    .background(Color.Black.copy(alpha = 0.42f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = if (showProControls) "Hide pro controls" else "Show pro controls",
+                    tint = Color.White
+                )
+            }
+
             CameraControls(
                 isRecording = isRecording,
                 onCapturePhoto = {
-                    cameraController.takePhoto(context)
+                    scope.launch {
+                        if (photoTimerSeconds > 0) {
+                            for (second in photoTimerSeconds downTo 1) {
+                                photoCountdown = second
+                                delay(1000)
+                            }
+                        }
+                        photoCountdown = 0
+                        cameraController.takePhoto(context)
+                    }
                 },
                 onToggleRecording = {
                     if (isRecording) {
                         cameraController.stopRecording()
                     } else {
                         cameraController.startRecording(context)
+                    }
+                },
+                onSwitchCamera = {
+                    if (isRecording) {
+                        statusMessage = "Stop recording before switching camera"
+                    } else {
+                        lensFacing = if (lensFacing == androidx.camera.core.CameraSelector.LENS_FACING_BACK) {
+                            androidx.camera.core.CameraSelector.LENS_FACING_FRONT
+                        } else {
+                            androidx.camera.core.CameraSelector.LENS_FACING_BACK
+                        }
+                        torchEnabled = false
+                        cameraController.setTorch(false)
+                        statusMessage = if (lensFacing == androidx.camera.core.CameraSelector.LENS_FACING_FRONT) {
+                            "Front camera"
+                        } else {
+                            "Back camera"
+                        }
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -215,6 +338,7 @@ private fun CameraControls(
     isRecording: Boolean,
     onCapturePhoto: () -> Unit,
     onToggleRecording: () -> Unit,
+    onSwitchCamera: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -238,7 +362,114 @@ private fun CameraControls(
         ) {
             Text(if (isRecording) "Stop" else "Record")
         }
+
+        IconButton(
+            onClick = onSwitchCamera,
+            enabled = !isRecording,
+            modifier = Modifier
+                .height(52.dp)
+                .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Cameraswitch,
+                contentDescription = "Switch camera",
+                tint = Color.White
+            )
+        }
     }
+}
+
+@Composable
+private fun ProControlsPanel(
+    torchEnabled: Boolean,
+    zoomLevel: Float,
+    exposureValue: Float,
+    exposureRange: IntRange,
+    timerValue: Int,
+    onToggleTorch: () -> Unit,
+    onZoomChanged: (Float) -> Unit,
+    onExposureChanged: (Float) -> Unit,
+    onTimerSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth(0.82f)
+            .widthIn(max = 360.dp)
+            .background(Color.Black.copy(alpha = 0.45f), MaterialTheme.shapes.medium)
+            .padding(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onToggleTorch) {
+                Icon(
+                    imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                    contentDescription = "Torch",
+                    tint = Color.White
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.Timer,
+                contentDescription = "Timer",
+                tint = Color.White,
+                modifier = Modifier.padding(start = 4.dp, end = 8.dp)
+            )
+            Text(
+                text = "Timer",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(bottom = 4.dp)
+        ) {
+            TimerChip(label = "Off", selected = timerValue == 0, onClick = { onTimerSelected(0) })
+            TimerChip(label = "3s", selected = timerValue == 3, onClick = { onTimerSelected(3) })
+            TimerChip(label = "10s", selected = timerValue == 10, onClick = { onTimerSelected(10) })
+        }
+
+        Text("Zoom", color = Color.White, style = MaterialTheme.typography.labelMedium)
+        Slider(
+            value = zoomLevel,
+            onValueChange = onZoomChanged,
+            valueRange = 0f..1f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = "Exposure: ${exposureValue.toInt()}",
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium
+        )
+        Slider(
+            value = exposureValue,
+            onValueChange = onExposureChanged,
+            valueRange = exposureRange.first.toFloat()..exposureRange.last.toFloat(),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun TimerChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        modifier = Modifier.padding(end = 6.dp),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = Color.White,
+            containerColor = Color.Black.copy(alpha = 0.2f),
+            labelColor = Color.White
+        )
+    )
 }
 
 @Composable
@@ -281,4 +512,10 @@ private fun Context.hasCameraAndAudioPermissions(): Boolean {
     ) == PackageManager.PERMISSION_GRANTED
 
     return cameraGranted && audioGranted
+}
+
+private fun Int.toTimerText(): String {
+    val minutes = this / 60
+    val seconds = this % 60
+    return String.format("%02d:%02d", minutes, seconds)
 }

@@ -1,7 +1,9 @@
 package com.telecam.di
 
 import android.util.Log
+import com.telecam.BuildConfig
 import com.telecam.data.remote.TelegramApiService
+import com.telecam.data.remote.TelegramAuthApiService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -11,6 +13,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 /**
@@ -20,7 +23,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val BASE_URL = "https://api.telegram.org/"
+    private const val TELEGRAM_BASE_URL = "https://api.telegram.org/"
     private const val TIMEOUT_SECONDS = 60L
     private const val TAG = "NetworkModule"
 
@@ -48,9 +51,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    @Named("telegramRetrofit")
+    fun provideTelegramRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(TELEGRAM_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -58,7 +62,26 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideTelegramApiService(retrofit: Retrofit): TelegramApiService {
+    @Named("authRetrofit")
+    fun provideAuthRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        val rawBaseUrl = BuildConfig.TELEGRAM_AUTH_BASE_URL
+        val normalizedBaseUrl = if (rawBaseUrl.endsWith("/")) rawBaseUrl else "$rawBaseUrl/"
+        return Retrofit.Builder()
+            .baseUrl(normalizedBaseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTelegramApiService(@Named("telegramRetrofit") retrofit: Retrofit): TelegramApiService {
         return retrofit.create(TelegramApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTelegramAuthApiService(@Named("authRetrofit") retrofit: Retrofit): TelegramAuthApiService {
+        return retrofit.create(TelegramAuthApiService::class.java)
     }
 }

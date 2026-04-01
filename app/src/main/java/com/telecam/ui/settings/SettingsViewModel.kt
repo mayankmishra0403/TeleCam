@@ -47,6 +47,10 @@ class SettingsViewModel @Inject constructor(
                     wifiOnlyUpload = settings.wifiOnlyUpload,
                     botToken = settings.botToken,
                     chatId = settings.chatId,
+                    telegramUserId = settings.telegramUserId,
+                    telegramUsername = settings.telegramUsername,
+                    pendingAuthToken = settings.pendingAuthToken,
+                    onboardingCompleted = settings.onboardingCompleted,
                     maxRetries = settings.maxRetries
                 )
             }

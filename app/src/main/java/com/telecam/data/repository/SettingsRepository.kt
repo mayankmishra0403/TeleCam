@@ -47,4 +47,24 @@ interface SettingsRepository {
      * Update camera facing preference.
      */
     suspend fun setCameraFacing(facing: String)
+
+    /**
+     * Save pending one-tap auth token.
+     */
+    suspend fun setPendingAuthToken(token: String)
+
+    /**
+     * Clear pending one-tap auth token.
+     */
+    suspend fun clearPendingAuthToken()
+
+    /**
+     * Save Telegram account details from one-tap onboarding.
+     */
+    suspend fun setTelegramUserDetails(userId: String, username: String?)
+
+    /**
+     * Mark onboarding completion state.
+     */
+    suspend fun setOnboardingCompleted(completed: Boolean)
 }

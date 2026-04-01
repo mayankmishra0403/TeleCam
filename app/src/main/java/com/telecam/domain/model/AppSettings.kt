@@ -5,6 +5,10 @@ data class AppSettings(
     val wifiOnlyUpload: Boolean = false,
     val botToken: String = "",
     val chatId: String = "",
+    val telegramUserId: String = "",
+    val telegramUsername: String = "",
+    val pendingAuthToken: String = "",
+    val onboardingCompleted: Boolean = false,
     val maxRetries: Int = 3,
     val cameraFacing: CameraFacing = CameraFacing.BACK,
     val pendingCount: Int = 0
