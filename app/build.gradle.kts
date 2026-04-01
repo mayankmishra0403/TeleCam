@@ -16,9 +16,14 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        val telegramBotToken =
+            (project.findProperty("TELEGRAM_BOT_TOKEN") as String?)
+                ?: System.getenv("TELEGRAM_BOT_TOKEN")
+                ?: ""
+
         buildConfigField("String", "TELEGRAM_AUTH_BASE_URL", "\"http://192.168.1.45:8080/\"")
         buildConfigField("String", "TELEGRAM_BOT_USERNAME", "\"tele_ca_m_bot\"")
-        buildConfigField("String", "TELEGRAM_BOT_TOKEN", "\"8519978215:AAGUNc96X8Iey22EVdcbYGGTQ9sebv8btSo\"")
+        buildConfigField("String", "TELEGRAM_BOT_TOKEN", "\"$telegramBotToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
