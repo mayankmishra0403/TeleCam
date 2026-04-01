@@ -1,0 +1,42 @@
+
+# Railway Deployment Configuration
+# This file tells Railway how to deploy the backend service
+
+name: telegram-auth-service
+type: nodejs
+
+# Start command
+start: npm run start
+
+# Install dependencies
+install: npm install
+
+# Environment setup
+environmentVariables:
+  NODE_ENV: production
+  PORT: 8080
+  HOST: 0.0.0.0
+
+# Public port
+ports:
+  - port: 8080
+    protocol: http
+
+# Health check (optional but recommended)
+healthcheck:
+  enabled: true
+  path: /api/health
+  interval: 30s
+  timeout: 10s
+  startPeriod: 60s
+  failureThreshold: 3
+
+# Logging
+logging:
+  level: info
+
+# Autoscaling (optional for paid plans)
+# scaling:
+#   minInstances: 1
+#   maxInstances: 3
+#   cpuThreshold: 80

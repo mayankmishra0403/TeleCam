@@ -11,6 +11,11 @@ build/
 
 # Local config / secrets
 local.properties
+*.local
+.env.local
+.env.*.local
+gradleProperties.local
+secrets/
 
 # Temporary files
 tmp/
@@ -21,3 +26,5 @@ Thumbs.db
 # Node / backend
 **/node_modules/
 **/.env
+**/.env.local
+**/.env.*.local
